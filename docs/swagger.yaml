@@ -1,0 +1,90 @@
+basePath: /api/v1
+definitions:
+  dto.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  dto.RegisterRequest:
+    properties:
+      address:
+        type: string
+      chain_id:
+        type: integer
+      label:
+        maxLength: 100
+        type: string
+      secret:
+        minLength: 10
+        type: string
+      webhook_url:
+        type: string
+    required:
+    - address
+    - chain_id
+    - secret
+    - webhook_url
+    type: object
+  dto.RegisterResponse:
+    properties:
+      address:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: API untuk register address dan webhook listener.
+  title: EVM Tx Watcher API
+  version: "1.0"
+paths:
+  /addresses:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a list of all registered addresses
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.RegisterResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+      summary: Get all registered addresses
+      tags:
+      - addresses
+    post:
+      consumes:
+      - application/json
+      description: Adds an EVM address and webhook for transaction monitoring
+      parameters:
+      - description: Register Request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.RegisterResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+      summary: Register address to monitor
+      tags:
+      - addresses
+swagger: "2.0"
