@@ -2,18 +2,32 @@ package handler
 
 import (
 	"evm-tx-watcher/internal/dto"
+	"evm-tx-watcher/internal/errors"
+	"evm-tx-watcher/internal/http/response"
 	"evm-tx-watcher/internal/service"
+	"evm-tx-watcher/internal/util"
+	"evm-tx-watcher/internal/validator"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 )
 
 type AddressHandler struct {
-	service service.AddressService
+	addressService service.AddressService
+	logger         *util.Logger
+	validator      *validator.Validator
 }
 
-func NewAddressHandler(service service.AddressService) *AddressHandler {
-	return &AddressHandler{service: service}
+func NewAddressHandler(
+	addressService service.AddressService,
+	logger *util.Logger,
+	validator *validator.Validator,
+) *AddressHandler {
+	return &AddressHandler{
+		addressService: addressService,
+		logger:         logger,
+		validator:      validator,
+	}
 }
 
 // RegisterAddress godoc
@@ -22,33 +36,31 @@ func NewAddressHandler(service service.AddressService) *AddressHandler {
 // @Tags         addresses
 // @Accept       json
 // @Produce      json
-// @Param        payload body dto.RegisterRequest true "Register Request"
-// @Success      201 {object} dto.RegisterResponse
-// @Failure      400 {object} dto.ErrorResponse
+// @Param        payload body dto.RegisterAddressRequest true "Register Request"
+// @Success      201 {object} dto.AddressResponse
+// @Failure      400 {object} dto.BaseResponse
 // @Router       /addresses [post]
 func (h *AddressHandler) Register(c echo.Context) error {
-	var request dto.RegisterRequest
+	var request dto.RegisterAddressRequest
+
 	if err := c.Bind(&request); err != nil {
-		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Error: "Invalid request format",
-		})
+		h.logger.WithError(err).Error("Failed to bind request")
+		appErr := errors.ValidationError("Invalid JSON format")
+		return response.SendAppError(c, appErr)
 	}
 
-	createdAddress, err := h.service.Register(c.Request().Context(), &request)
+	if err := h.validator.Validate(request); err != nil {
+		h.logger.WithError(err).Error("Failed to validate request")
+		return response.SendValidationError(c, h.validator, err)
+
+	}
+
+	createdAddress, err := h.addressService.Register(c.Request().Context(), &request)
 	if err != nil {
-		// TODO: Add proper error type checking for different error types
-		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Error: err.Error(),
-		})
+		h.logger.WithError(err).Error("Failed to register address")
+		return response.SendAppError(c, err)
 	}
-
-	response := dto.RegisterResponse{
-		ID:      createdAddress.ID.String(),
-		Address: createdAddress.Address,
-		Label:   *createdAddress.Label,
-	}
-
-	return c.JSON(http.StatusCreated, response)
+	return response.SendSuccess(c, http.StatusCreated, "Address registered successfully", createdAddress)
 }
 
 // GetAll godoc
@@ -57,29 +69,15 @@ func (h *AddressHandler) Register(c echo.Context) error {
 // @Tags         addresses
 // @Accept       json
 // @Produce      json
-// @Success      200 {array} dto.RegisterResponse
-// @Failure      400 {object} dto.ErrorResponse
+// @Success      200 {array} dto.AddressResponse
+// @Failure      400 {object} dto.BaseResponse
 // @Router       /addresses [get]
 func (h *AddressHandler) GetAll(c echo.Context) error {
-	addresses, err := h.service.GetAll(c.Request().Context())
+	addresses, err := h.addressService.GetAll(c.Request().Context())
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
-			Error: "Failed to retrieve addresses",
-		})
+		h.logger.WithError(err).Error("Failed to retrieve addresses")
+		return response.SendAppError(c, err)
 	}
 
-	// Convert to response DTOs
-	var responses []dto.RegisterResponse
-	for _, addr := range addresses {
-		response := dto.RegisterResponse{
-			ID:      addr.ID.String(),
-			Address: addr.Address,
-		}
-		if addr.Label != nil {
-			response.Label = *addr.Label
-		}
-		responses = append(responses, response)
-	}
-
-	return c.JSON(http.StatusOK, responses)
+	return response.SendSuccess(c, http.StatusOK, "Addresses retrieved successfully", addresses)
 }

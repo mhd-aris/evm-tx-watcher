@@ -1,12 +1,14 @@
 package middleware
 
 import (
+	"evm-tx-watcher/internal/util"
+
 	"github.com/labstack/echo/v4"
 	"github.com/sirupsen/logrus"
 )
 
 // Logging middleware
-func LoggingMiddleware(logger *logrus.Logger) echo.MiddlewareFunc {
+func LoggingMiddleware(logger *util.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 

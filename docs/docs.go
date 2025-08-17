@@ -34,14 +34,14 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/dto.RegisterResponse"
+                                "$ref": "#/definitions/dto.AddressResponse"
                             }
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/dto.ErrorResponse"
+                            "$ref": "#/definitions/dto.BaseResponse"
                         }
                     }
                 }
@@ -65,7 +65,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.RegisterRequest"
+                            "$ref": "#/definitions/dto.RegisterAddressRequest"
                         }
                     }
                 ],
@@ -73,13 +73,13 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/dto.RegisterResponse"
+                            "$ref": "#/definitions/dto.AddressResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/dto.ErrorResponse"
+                            "$ref": "#/definitions/dto.BaseResponse"
                         }
                     }
                 }
@@ -87,15 +87,75 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "dto.ErrorResponse": {
+        "dto.AddressResponse": {
             "type": "object",
             "properties": {
-                "error": {
+                "address": {
+                    "type": "string"
+                },
+                "chain_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "is_contract": {
+                    "type": "boolean"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "webhook_url": {
                     "type": "string"
                 }
             }
         },
-        "dto.RegisterRequest": {
+        "dto.BaseResponse": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "error": {
+                    "$ref": "#/definitions/dto.ErrorInfo"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "dto.ErrorInfo": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.RegisterAddressRequest": {
             "type": "object",
             "required": [
                 "address",
@@ -110,6 +170,10 @@ const docTemplate = `{
                 "chain_id": {
                     "type": "integer"
                 },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
                 "label": {
                     "type": "string",
                     "maxLength": 100
@@ -119,20 +183,6 @@ const docTemplate = `{
                     "minLength": 10
                 },
                 "webhook_url": {
-                    "type": "string"
-                }
-            }
-        },
-        "dto.RegisterResponse": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "label": {
                     "type": "string"
                 }
             }

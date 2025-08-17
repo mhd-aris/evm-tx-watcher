@@ -1,16 +1,59 @@
 basePath: /api/v1
 definitions:
-  dto.ErrorResponse:
-    properties:
-      error:
-        type: string
-    type: object
-  dto.RegisterRequest:
+  dto.AddressResponse:
     properties:
       address:
         type: string
       chain_id:
         type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      is_contract:
+        type: boolean
+      label:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      webhook_url:
+        type: string
+    type: object
+  dto.BaseResponse:
+    properties:
+      data: {}
+      error:
+        $ref: '#/definitions/dto.ErrorInfo'
+      message:
+        type: string
+      success:
+        type: boolean
+    type: object
+  dto.ErrorInfo:
+    properties:
+      code:
+        type: string
+      details:
+        additionalProperties: true
+        type: object
+      message:
+        type: string
+    type: object
+  dto.RegisterAddressRequest:
+    properties:
+      address:
+        type: string
+      chain_id:
+        type: integer
+      description:
+        maxLength: 255
+        type: string
       label:
         maxLength: 100
         type: string
@@ -24,15 +67,6 @@ definitions:
     - chain_id
     - secret
     - webhook_url
-    type: object
-  dto.RegisterResponse:
-    properties:
-      address:
-        type: string
-      id:
-        type: string
-      label:
-        type: string
     type: object
 host: localhost:8080
 info:
@@ -53,12 +87,12 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/dto.RegisterResponse'
+              $ref: '#/definitions/dto.AddressResponse'
             type: array
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/dto.ErrorResponse'
+            $ref: '#/definitions/dto.BaseResponse'
       summary: Get all registered addresses
       tags:
       - addresses
@@ -72,18 +106,18 @@ paths:
         name: payload
         required: true
         schema:
-          $ref: '#/definitions/dto.RegisterRequest'
+          $ref: '#/definitions/dto.RegisterAddressRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/dto.RegisterResponse'
+            $ref: '#/definitions/dto.AddressResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/dto.ErrorResponse'
+            $ref: '#/definitions/dto.BaseResponse'
       summary: Register address to monitor
       tags:
       - addresses

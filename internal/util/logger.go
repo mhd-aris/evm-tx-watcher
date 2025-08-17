@@ -1,10 +1,16 @@
 package util
 
 import (
+	"time"
+
 	"github.com/sirupsen/logrus"
 )
 
-func NewLogger(level string) *logrus.Logger {
+type Logger struct {
+	*logrus.Logger
+}
+
+func NewLogger(level string) *Logger {
 	logger := logrus.New()
 
 	parsedLevel, err := logrus.ParseLevel(level)
@@ -17,9 +23,11 @@ func NewLogger(level string) *logrus.Logger {
 
 	logger.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp:   true,
-		TimestampFormat: "2006-01-02 15:04:05",
+		TimestampFormat: time.RFC3339,
 		ForceColors:     true,
 	})
 
-	return logger
+	return &Logger{
+		Logger: logger,
+	}
 }

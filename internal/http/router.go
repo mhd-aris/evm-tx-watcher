@@ -6,14 +6,15 @@ import (
 	"evm-tx-watcher/internal/http/middleware"
 	"evm-tx-watcher/internal/repository"
 	"evm-tx-watcher/internal/service"
+	"evm-tx-watcher/internal/util"
+	"evm-tx-watcher/internal/validator"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
-	"github.com/sirupsen/logrus"
 )
 
-func NewRouter(cfg *config.Config, logger *logrus.Logger, db *sqlx.DB) *echo.Echo {
+func NewRouter(cfg *config.Config, db *sqlx.DB, logger *util.Logger, validator *validator.Validator) *echo.Echo {
 	e := echo.New()
 
 	e.HideBanner = false
@@ -24,19 +25,22 @@ func NewRouter(cfg *config.Config, logger *logrus.Logger, db *sqlx.DB) *echo.Ech
 	e.Use(echomiddleware.CORS())
 
 	// Setup routes
-	setupRoutes(e, db)
+	setupRoutes(e, db, logger, validator)
 
 	return e
 }
 
-func setupRoutes(e *echo.Echo, db *sqlx.DB) {
+func setupRoutes(e *echo.Echo, db *sqlx.DB, logger *util.Logger, validator *validator.Validator) {
 
 	// Health check endpoint
 	e.GET("/health", handler.HealthHandler)
 
+	unitOfWork := repository.NewUnitOfWork(db)
 	addrRepo := repository.NewAddressRepository(db)
-	addrService := service.NewAddressService(addrRepo)
-	addrHandler := handler.NewAddressHandler(addrService)
+	webhookRepo := repository.NewWebhookRepository(db)
+
+	addrService := service.NewAddressService(unitOfWork, addrRepo, webhookRepo)
+	addrHandler := handler.NewAddressHandler(addrService, logger, validator)
 
 	v1 := e.Group("/api/v1")
 	{
