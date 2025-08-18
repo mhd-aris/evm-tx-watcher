@@ -156,7 +156,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Live Demo**: Coming soon
 - **API Documentation**: `/swagger` endpoint when running
-- **Portfolio**: [Your Portfolio URL]
 
 ---
 

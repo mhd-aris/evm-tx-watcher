@@ -8,6 +8,7 @@ import (
 	"evm-tx-watcher/internal/util"
 	"evm-tx-watcher/internal/validator"
 	"fmt"
+	"log"
 
 	echoSwagger "github.com/swaggo/echo-swagger"
 )
@@ -20,10 +21,13 @@ import (
 
 func main() {
 	// Load configuration
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
 
 	// Initialize logger with config
-	logger := util.NewLogger(cfg.LogLevel)
+	logger := util.NewLogger(cfg.LogLevel, cfg.LogFormat)
 	logger.Info("Starting EVM Transaction Watcher server...")
 
 	// Initialize request validator

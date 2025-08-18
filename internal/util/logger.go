@@ -7,27 +7,32 @@ import (
 )
 
 type Logger struct {
-	*logrus.Logger
+	*logrus.Entry
 }
 
-func NewLogger(level string) *Logger {
-	logger := logrus.New()
+func NewLogger(level, format string) *Logger {
+	base := logrus.New()
 
 	parsedLevel, err := logrus.ParseLevel(level)
 	if err != nil {
-		logger.Warnf("Invalid log level '%s': %v, defaulting to info level", level, err)
+		base.Warnf("Invalid log level '%s': %v, defaulting to info", level, err)
 		parsedLevel = logrus.InfoLevel
 	}
+	base.SetLevel(parsedLevel)
 
-	logger.SetLevel(parsedLevel)
-
-	logger.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp:   true,
-		TimestampFormat: time.RFC3339,
-		ForceColors:     true,
-	})
-
-	return &Logger{
-		Logger: logger,
+	if format == "json" {
+		base.SetFormatter(&logrus.JSONFormatter{TimestampFormat: time.RFC3339})
+	} else {
+		base.SetFormatter(&logrus.TextFormatter{
+			FullTimestamp:   true,
+			TimestampFormat: time.RFC3339,
+			ForceColors:     true,
+		})
 	}
+
+	return &Logger{Entry: logrus.NewEntry(base)}
+}
+
+func (l *Logger) WithFields(fields logrus.Fields) *Logger {
+	return &Logger{Entry: l.Entry.WithFields(fields)}
 }

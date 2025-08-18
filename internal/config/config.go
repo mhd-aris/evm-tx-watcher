@@ -3,15 +3,18 @@ package config
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/spf13/viper"
 )
 
 // Config holds all configuration for the application
 type Config struct {
-	AppPort  string         `mapstructure:"APP_PORT"`
-	LogLevel string         `mapstructure:"LOG_LEVEL"`
-	DB       DatabaseConfig `mapstructure:",squash"`
+	AppPort   string            `mapstructure:"APP_PORT"`
+	LogLevel  string            `mapstructure:"LOG_LEVEL"`
+	LogFormat string            `mapstructure:"LOG_FORMAT"`
+	DB        DatabaseConfig    `mapstructure:",squash"`
+	Networks  map[string]string `mapstructure:"-"`
 }
 
 // DatabaseConfig holds database configuration
@@ -23,34 +26,49 @@ type DatabaseConfig struct {
 	Name     string `mapstructure:"DB_NAME"`
 }
 
-// Load reads configuration from environment variables and .env file
-func Load() *Config {
-	// Set defaults
+func Load() (*Config, error) {
 	viper.SetDefault("APP_PORT", "8080")
 	viper.SetDefault("LOG_LEVEL", "info")
+	viper.SetDefault("LOG_FORMAT", "text")
 	viper.SetDefault("DB_HOST", "localhost")
 	viper.SetDefault("DB_PORT", 5432)
 
-	// Read from .env file
 	viper.SetConfigFile(".env")
 	viper.AutomaticEnv()
 
-	// Try to read config file, but don't fail if it doesn't exist
 	if err := viper.ReadInConfig(); err != nil {
 		log.Printf("Warning: Could not read config file: %v", err)
 	}
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
-		log.Fatalf("Error unmarshalling config: %v", err)
+		return nil, fmt.Errorf("error unmarshalling config: %w", err)
 	}
 
-	// Validate required fields
 	if err := validateConfig(&config); err != nil {
-		log.Fatalf("Config validation failed: %v", err)
+		return nil, err
 	}
 
-	return &config
+	// Parse NETWORKS
+	networksRaw := viper.GetString("NETWORKS")
+	networkNames := strings.Split(networksRaw, ",")
+	networkMap := make(map[string]string)
+
+	for _, name := range networkNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		key := fmt.Sprintf("RPC_%s", strings.ToUpper(name))
+		url := viper.GetString(key)
+		if url == "" {
+			return nil, fmt.Errorf("RPC URL for network %s is not set (env: %s)", name, key)
+		}
+		networkMap[name] = url
+	}
+	config.Networks = networkMap
+
+	return &config, nil
 }
 
 // validateConfig validates the loaded configuration
