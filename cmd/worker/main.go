@@ -18,7 +18,7 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	log := util.NewLogger(cfg.LogLevel, cfg.LogFormat)
+	logger := util.NewLogger(cfg.LogLevel, cfg.LogFormat)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -28,12 +28,12 @@ func main() {
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 		<-ch
-		log.Info("shutting down worker...")
+		logger.Info("shutting down worker...")
 		cancel()
 	}()
 
-	if err := app.RunWorker(ctx, cfg, log); err != nil {
-		log.WithError(err).Error("worker exited with error")
+	if err := app.RunWorker(ctx, cfg, logger); err != nil {
+		logger.WithError(err).Error("worker exited with error")
 		os.Exit(1)
 	}
 }

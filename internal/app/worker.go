@@ -13,47 +13,73 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-func RunWorker(ctx context.Context, cfg *config.Config, log *util.Logger) error {
-	var wg sync.WaitGroup
-	blockChan := make(chan *types.Block, 50) // change back to *types.Block
+func RunWorker(ctx context.Context, cfg *config.Config, logger *util.Logger) error {
+	logger.Info("Starting EVM Transaction Watcher Worker")
 
-	// spawn watcher per network
-	for name, rpcURL := range cfg.Networks {
-		c, err := client.New(name, rpcURL, log)
+	var wg sync.WaitGroup
+	blockChan := make(chan *types.Block, 50)
+
+	// Initialize simple processor
+	proc := processor.New(logger)
+
+	// Start blockchain watchers for each network
+	for _, networkConfig := range cfg.Networks {
+		logger.Infof("Initializing client for %s (Chain ID: %d)", networkConfig.Name, networkConfig.ChainID)
+
+		// Create blockchain client
+		blockchainClient, err := client.New(networkConfig, logger)
 		if err != nil {
-			return err
+			logger.WithError(err).Errorf("Failed to create client for %s, skipping...", networkConfig.Name)
+			continue // Skip this network, don't fail entire worker
 		}
 
-		// watcher now returns *types.Block directly
-		w := watcher.New(c, 1, log)
+		// Create watcher with simple parameters
+		blockWatcher := watcher.New(blockchainClient, networkConfig, 5, logger)
 
+		// Start watcher in goroutine
 		wg.Add(1)
-		go func(n string) {
+		go func(network config.NetworkConfig, client *client.Client) {
 			defer wg.Done()
-			if err := w.Start(ctx, blockChan); err != nil && ctx.Err() == nil {
-				log.Errorf("Watcher %s stopped: %v", n, err)
+			defer client.Close()
+
+			logger.Infof("Starting watcher for %s", network.Name)
+
+			if err := blockWatcher.Start(ctx, blockChan); err != nil && ctx.Err() == nil {
+				logger.WithError(err).Errorf("Watcher %s stopped with error", network.Name)
 			}
-		}(name)
+		}(networkConfig, blockchainClient)
 	}
 
-	// processor
-	proc := processor.New(log)
-
-	// consumer
+	// Start block processor
+	wg.Add(1)
 	go func() {
-		for block := range blockChan {
-			if err := proc.HandleBlock(ctx, block); err != nil {
-				log.Errorf("Processor error: %v", err)
+		defer wg.Done()
+		logger.Info("Starting block processor")
+
+		for {
+			select {
+			case <-ctx.Done():
+				logger.Info("Block processor stopped")
+				return
+			case block := <-blockChan:
+				if block != nil {
+					if err := proc.HandleBlock(ctx, block); err != nil {
+						logger.WithError(err).Error("Failed to process block")
+					}
+				}
 			}
 		}
 	}()
 
-	// shutdown gracefully
+	// Graceful shutdown
 	go func() {
 		wg.Wait()
 		close(blockChan)
 	}()
 
+	// Wait for context cancellation
 	<-ctx.Done()
+	logger.Info("Shutting down worker...")
+
 	return nil
 }

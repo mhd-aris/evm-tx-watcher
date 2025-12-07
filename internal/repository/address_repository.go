@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"evm-tx-watcher/internal/domain"
 
@@ -18,6 +19,7 @@ type AddressRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.Address, error)
 	FindByAddress(ctx context.Context, address string) (*domain.Address, error)
 	FindAll(ctx context.Context) ([]*domain.Address, error)
+	GetWatchedAddresses(ctx context.Context) ([]*domain.WatchedAddress, error)
 }
 
 type addressRepository struct {
@@ -82,4 +84,25 @@ func (r *addressRepository) FindByAddress(ctx context.Context, addr string) (*do
 		return nil, err
 	}
 	return &address, nil
+}
+
+func (r *addressRepository) GetWatchedAddresses(ctx context.Context) ([]*domain.WatchedAddress, error) {
+	var watchedAddresses []*domain.WatchedAddress
+	query := `
+		SELECT DISTINCT
+			a.address,
+			a.chain_id,
+			a.is_active,
+			w.id as webhook_id,
+			w.url as webhook_url
+		FROM addresses a
+		JOIN webhooks w ON a.id = w.address_id
+		WHERE a.is_active = true`
+	
+	err := r.db.SelectContext(ctx, &watchedAddresses, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get watched addresses: %w", err)
+	}
+	
+	return watchedAddresses, nil
 }

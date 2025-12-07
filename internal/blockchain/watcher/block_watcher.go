@@ -2,57 +2,74 @@ package watcher
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"evm-tx-watcher/internal/blockchain/client"
+	"evm-tx-watcher/internal/config"
 	"evm-tx-watcher/internal/util"
 )
+
+// BlockEvent represents a confirmed block with its transactions
+type BlockEvent struct {
+	NetworkConfig      config.NetworkConfig
+	Block              *types.Block
+	TransactionDetails []*client.TransactionDetails
+}
 
 type Watcher struct {
 	client        *client.Client
 	confirmations int64
-	log           *util.Logger
+	logger        *util.Logger
+	networkConfig config.NetworkConfig
 }
 
-func New(c *client.Client, conf int64, log *util.Logger) *Watcher {
+func New(c *client.Client, networkConfig config.NetworkConfig, confirmations int64, logger *util.Logger) *Watcher {
 	return &Watcher{
 		client:        c,
-		confirmations: conf,
-		log:           log,
+		confirmations: confirmations,
+		logger:        logger,
+		networkConfig: networkConfig,
 	}
 }
 
 func (w *Watcher) Start(ctx context.Context, out chan<- *types.Block) error {
-	// sanity check: get latest head
-	head, err := w.client.Eth.BlockNumber(ctx)
+	// Get latest block number for initial sync
+	latestBlock, err := w.client.GetLatestBlockNumber(ctx)
 	if err != nil {
-		w.log.WithError(err).Errorf("[%s] failed to get latest block number", w.client.Network)
-	} else {
-		w.log.Infof("[%s] starting watcher, current head=%d", w.client.Network, head)
+		return fmt.Errorf("failed to get latest block number for %s: %w", w.networkConfig.Name, err)
 	}
 
-	headers := make(chan *types.Header)
-	sub, err := w.client.Eth.SubscribeNewHead(ctx, headers)
+	w.logger.Infof("[%s] Starting watcher, current head=%d, confirmations=%d",
+		w.networkConfig.Name, latestBlock, w.confirmations)
+
+	// Subscribe to new headers
+	headers := make(chan *types.Header, 10)
+	errCh, err := w.client.SubscribeNewHeads(ctx, headers)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to subscribe to new heads for %s: %w", w.networkConfig.Name, err)
 	}
-	defer sub.Unsubscribe()
+
+	// Track pending blocks
+	pending := make(map[uint64]*types.Header)
 
 	for {
 		select {
 		case <-ctx.Done():
-			w.log.Infof("[%s] watcher stopped", w.client.Network)
+			w.logger.Infof("[%s] Watcher stopped", w.networkConfig.Name)
 			return nil
 
-		case err := <-sub.Err():
-			w.log.WithError(err).Warnf("[%s] subscription error, retrying in 5s", w.client.Network)
-			select {
-			case <-time.After(5 * time.Second):
-				return w.Start(ctx, out) // restart watcher
-			case <-ctx.Done():
-				return nil
+		case err := <-errCh:
+			if err != nil {
+				w.logger.WithError(err).Warnf("[%s] Subscription error, retrying in 10s", w.networkConfig.Name)
+				select {
+				case <-time.After(10 * time.Second):
+					return w.Start(ctx, out) // restart watcher
+				case <-ctx.Done():
+					return nil
+				}
 			}
 
 		case header := <-headers:
@@ -60,54 +77,52 @@ func (w *Watcher) Start(ctx context.Context, out chan<- *types.Block) error {
 				continue
 			}
 
-			// cek confirmations
-			if w.confirmations > 0 {
-				head, err := w.client.Eth.BlockNumber(ctx)
-				if err != nil {
-					w.log.WithError(err).Warnf("[%s] failed to get head", w.client.Network)
-					continue
-				}
-				if head < header.Number.Uint64()+uint64(w.confirmations) {
-					w.log.Debugf("[%s] skip block %d waiting for %d confirmations (head=%d)",
-						w.client.Network,
-						header.Number.Uint64(),
-						w.confirmations,
-						head,
-					)
-					continue
+			w.logger.Debugf("[%s] New header: block=%d", w.networkConfig.Name, header.Number.Uint64())
+
+			// Store new block header in pending
+			pending[header.Number.Uint64()] = header
+			currentHead := header.Number.Uint64()
+
+			// Process confirmed blocks
+			for blockNum, blockHeader := range pending {
+				if currentHead >= blockNum+uint64(w.confirmations) {
+					// Block is now confirmed
+					if err := w.processConfirmedBlock(ctx, blockHeader, out); err != nil {
+						w.logger.WithError(err).Errorf("[%s] Failed to process confirmed block %d",
+							w.networkConfig.Name, blockNum)
+					}
+					delete(pending, blockNum)
 				}
 			}
 
-			// Try ethclient first, fallback to raw RPC for L2 networks
-			block, err := w.client.Eth.BlockByNumber(ctx, header.Number)
-			if err != nil {
-				if err.Error() == "transaction type not supported" {
-					// L2 networks like Arbitrum/Base use custom transaction types
-					// Fall back to header-only information
-					w.log.Infof("[%s] new block=%d hash=%s (L2 block, transaction details unavailable)",
-						w.client.Network,
-						header.Number.Uint64(),
-						header.Hash().Hex(),
-					)
-					continue
+			// Clean up old pending blocks (older than 100 blocks)
+			for blockNum := range pending {
+				if currentHead > blockNum+100 {
+					w.logger.Warnf("[%s] Dropping old pending block %d", w.networkConfig.Name, blockNum)
+					delete(pending, blockNum)
 				}
-				w.log.WithError(err).Warnf("[%s] failed to fetch block %d", w.client.Network, header.Number.Uint64())
-				continue
-			}
-
-			w.log.Infof("[%s] new block=%d hash=%s txs=%d",
-				w.client.Network,
-				header.Number.Uint64(),
-				header.Hash().Hex(),
-				len(block.Transactions()),
-			)
-
-			select {
-			case out <- block: // send block
-			default:
-				w.log.Warnf("[%s] channel full, dropping block %d",
-					w.client.Network, header.Number.Uint64())
 			}
 		}
+	}
+}
+
+func (w *Watcher) processConfirmedBlock(ctx context.Context, header *types.Header, out chan<- *types.Block) error {
+	// Get basic block via client method
+	block, _, err := w.client.GetBlockWithTransactions(ctx, header.Number)
+	if err != nil {
+		return fmt.Errorf("failed to get block %d: %w", header.Number.Uint64(), err)
+	}
+
+	w.logger.Infof("[%s] Confirmed block=%d hash=%s txs=%d",
+		w.networkConfig.Name, block.Number().Uint64(), block.Hash().Hex(), len(block.Transactions()))
+
+	// Send to processor (non-blocking)
+	select {
+	case out <- block:
+		return nil
+	default:
+		w.logger.Warnf("[%s] Block processor channel full, dropping block %d",
+			w.networkConfig.Name, block.Number().Uint64())
+		return fmt.Errorf("block processor channel full")
 	}
 }

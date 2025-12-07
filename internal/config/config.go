@@ -10,11 +10,19 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
-	AppPort   string            `mapstructure:"APP_PORT"`
-	LogLevel  string            `mapstructure:"LOG_LEVEL"`
-	LogFormat string            `mapstructure:"LOG_FORMAT"`
-	DB        DatabaseConfig    `mapstructure:",squash"`
-	Networks  map[string]string `mapstructure:"-"`
+	AppPort   string                   `mapstructure:"APP_PORT"`
+	LogLevel  string                   `mapstructure:"LOG_LEVEL"`
+	LogFormat string                   `mapstructure:"LOG_FORMAT"`
+	DB        DatabaseConfig           `mapstructure:",squash"`
+	Redis     RedisConfig              `mapstructure:",squash"`
+	Networks  map[string]NetworkConfig `mapstructure:"-"`
+}
+
+// NetworkConfig holds network configuration with chain ID
+type NetworkConfig struct {
+	Name    string
+	ChainID int64
+	RPC     string
 }
 
 // DatabaseConfig holds database configuration
@@ -26,12 +34,23 @@ type DatabaseConfig struct {
 	Name     string `mapstructure:"DB_NAME"`
 }
 
+// RedisConfig holds Redis configuration
+type RedisConfig struct {
+	Host     string `mapstructure:"REDIS_HOST"`
+	Port     int    `mapstructure:"REDIS_PORT"`
+	Password string `mapstructure:"REDIS_PASSWORD"`
+	DB       int    `mapstructure:"REDIS_DB"`
+}
+
 func Load() (*Config, error) {
 	viper.SetDefault("APP_PORT", "8080")
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("LOG_FORMAT", "text")
 	viper.SetDefault("DB_HOST", "localhost")
 	viper.SetDefault("DB_PORT", 5432)
+	viper.SetDefault("REDIS_HOST", "localhost")
+	viper.SetDefault("REDIS_PORT", 6379)
+	viper.SetDefault("REDIS_DB", 0)
 
 	viper.SetConfigFile(".env")
 	viper.AutomaticEnv()
@@ -49,26 +68,47 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	// Parse NETWORKS
-	networksRaw := viper.GetString("NETWORKS")
-	networkNames := strings.Split(networksRaw, ",")
-	networkMap := make(map[string]string)
+	// Setup predefined testnet networks
+	config.Networks = getTestnetNetworks()
 
-	for _, name := range networkNames {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
+	// Override RPC URLs from environment if provided
+	for name, network := range config.Networks {
+		key := fmt.Sprintf("RPC_%s", strings.ToUpper(strings.ReplaceAll(name, "-", "_")))
+		if url := viper.GetString(key); url != "" {
+			network.RPC = url
+			config.Networks[name] = network
 		}
-		key := fmt.Sprintf("RPC_%s", strings.ToUpper(name))
-		url := viper.GetString(key)
-		if url == "" {
-			return nil, fmt.Errorf("RPC URL for network %s is not set (env: %s)", name, key)
-		}
-		networkMap[name] = url
 	}
-	config.Networks = networkMap
+
+	// Validate that all networks have RPC URLs
+	for name, network := range config.Networks {
+		if network.RPC == "" {
+			return nil, fmt.Errorf("RPC URL for network %s is not set", name)
+		}
+	}
 
 	return &config, nil
+}
+
+// getTestnetNetworks returns hardcoded testnet network configurations
+func getTestnetNetworks() map[string]NetworkConfig {
+	return map[string]NetworkConfig{
+		"ethereum-sepolia": {
+			Name:    "ethereum-sepolia",
+			ChainID: 11155111,
+			RPC:     "", // will be set from env
+		},
+		"base-sepolia": {
+			Name:    "base-sepolia",
+			ChainID: 84532,
+			RPC:     "", // will be set from env
+		},
+		"arbitrum-sepolia": {
+			Name:    "arbitrum-sepolia",
+			ChainID: 421614,
+			RPC:     "", // will be set from env
+		},
+	}
 }
 
 // validateConfig validates the loaded configuration

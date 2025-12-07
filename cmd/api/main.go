@@ -2,8 +2,8 @@ package main
 
 import (
 	_ "evm-tx-watcher/docs"
+	"evm-tx-watcher/db"
 	"evm-tx-watcher/internal/config"
-	"evm-tx-watcher/internal/db"
 	"evm-tx-watcher/internal/http"
 	"evm-tx-watcher/internal/util"
 	"evm-tx-watcher/internal/validator"
